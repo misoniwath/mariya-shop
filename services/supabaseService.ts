@@ -128,11 +128,11 @@ export const supabaseService = {
     }
 
     // 6. Trigger Notification (Fire and forget)
-    fetch("/api/notify-telegram", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order: orderData }),
-    }).catch(console.error);
+    // fetch("/api/notify-telegram", {
+    //   method: "POST",
+    //   headers: { "Content-Type": "application/json" },
+    //   body: JSON.stringify({ order: orderData }),
+    // }).catch(console.error);
 
     return orderData as Order;
   },
@@ -317,23 +317,7 @@ export const supabaseService = {
   },
 
   async testTelegram(): Promise<boolean> {
-    try {
-      const res = await fetch("/api/notify-telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          order: {
-            id: "TEST-MSG",
-            total: 0,
-            created_at: new Date().toISOString(),
-            customer_info: { name: "Test" },
-            items: [],
-          },
-        }),
-      });
-      return res.ok;
-    } catch (e) {
-      return false;
-    }
+    // Deprecated: Telegram notifications are now handled by the Edge Function
+    return true;
   },
 };
