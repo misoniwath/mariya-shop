@@ -13,8 +13,8 @@ import AdminDashboard from "./pages/AdminDashboard";
 import InventoryManagement from "./pages/InventoryManagement";
 import AuthPage from "./pages/AuthPage";
 import { UserRole } from "./types";
-
 import { supabase } from "./lib/supabaseClient";
+import { Analytics } from "@vercel/analytics/react";
 
 const App: React.FC = () => {
   const [role, setRole] = useState<UserRole>(UserRole.CUSTOMER);
@@ -53,6 +53,7 @@ const App: React.FC = () => {
 
   return (
     <HashRouter>
+      <Analytics />
       <div className="min-h-screen flex flex-col">
         {/* Simple Navigation Header */}
         <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
