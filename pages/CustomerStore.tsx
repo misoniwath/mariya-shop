@@ -40,6 +40,7 @@ const CustomerStore: React.FC = () => {
     phone: "",
     address: "",
   });
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     loadProducts();
@@ -230,8 +231,10 @@ const CustomerStore: React.FC = () => {
             {filteredProducts.map((product) => (
               <div
                 key={product.id}
-                className="bg-white rounded-2xl overflow-hidden border border-slate-200 hover:shadow-xl transition-all group relative">
-                <div className="relative h-56 overflow-hidden">
+                className="bg-white rounded-2xl overflow-hidden border border-slate-200 hover:shadow-xl transition-all group relative flex flex-col">
+                <div
+                  className="relative h-56 overflow-hidden cursor-pointer"
+                  onClick={() => setSelectedProduct(product)}>
                   <img
                     src={product.image_url}
                     alt={product.name}
@@ -254,22 +257,26 @@ const CustomerStore: React.FC = () => {
                     </div>
                   ) : null}
                 </div>
-                <div className="p-6">
+                <div className="p-6 flex flex-col flex-grow">
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-slate-800 line-clamp-1">
+                    <h3
+                      className="text-lg font-bold text-slate-800 line-clamp-1 cursor-pointer hover:text-indigo-600 transition-colors"
+                      onClick={() => setSelectedProduct(product)}>
                       {product.name}
                     </h3>
                     <span className="text-indigo-600 font-black whitespace-nowrap ml-2">
                       ${product.price.toFixed(2)}
                     </span>
                   </div>
-                  <p className="text-slate-500 text-sm mb-6 line-clamp-2 h-10 leading-relaxed">
+                  <p className="text-slate-500 text-sm mb-6 line-clamp-2 h-10 leading-relaxed flex-grow">
                     {product.description}
                   </p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-medium italic">
-                      Stock: {product.stock} units
-                    </span>
+                  <div className="flex items-center justify-between mt-auto">
+                    <button
+                      onClick={() => setSelectedProduct(product)}
+                      className="text-xs font-bold text-indigo-600 hover:underline">
+                      View Details
+                    </button>
                     <button
                       onClick={() => addToCart(product)}
                       disabled={product.stock === 0}
@@ -578,6 +585,77 @@ const CustomerStore: React.FC = () => {
           )}
         </div>
       </div>
+      {/* Product Details Modal */}
+      {selectedProduct && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col md:flex-row animate-in zoom-in-95 duration-200">
+            <div className="md:w-1/2 h-64 md:h-auto relative bg-slate-100">
+              <img
+                src={selectedProduct.image_url}
+                alt={selectedProduct.name}
+                className="w-full h-full object-cover"
+              />
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="absolute top-4 left-4 bg-white/80 backdrop-blur p-2 rounded-full text-slate-600 hover:bg-white transition-colors md:hidden">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="md:w-1/2 p-8 flex flex-col relative">
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors hidden md:block">
+                <X size={24} />
+              </button>
+
+              <div className="mb-auto">
+                <span className="inline-block bg-indigo-50 text-indigo-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-3">
+                  {selectedProduct.category}
+                </span>
+                <h2 className="text-2xl font-black text-slate-800 mb-2">
+                  {selectedProduct.name}
+                </h2>
+                <div className="text-2xl font-black text-indigo-600 mb-6">
+                  ${selectedProduct.price.toFixed(2)}
+                </div>
+                <div className="prose prose-sm text-slate-500 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
+                  <p className="leading-relaxed whitespace-pre-wrap">
+                    {selectedProduct.description}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-6 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-slate-500">
+                    Availability
+                  </span>
+                  <span
+                    className={`text-sm font-bold ${
+                      selectedProduct.stock > 0
+                        ? "text-green-600"
+                        : "text-red-500"
+                    }`}>
+                    {selectedProduct.stock > 0
+                      ? `${selectedProduct.stock} in stock`
+                      : "Out of Stock"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    addToCart(selectedProduct);
+                    setSelectedProduct(null);
+                  }}
+                  disabled={selectedProduct.stock === 0}
+                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-lg active:scale-95 flex items-center justify-center gap-2">
+                  <Plus size={20} />
+                  {selectedProduct.stock === 0 ? "Out of Stock" : "Add to Cart"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
