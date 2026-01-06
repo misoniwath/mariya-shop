@@ -1,18 +1,39 @@
 import { supabase } from "../lib/supabaseClient";
 import { Product, Order, CustomerInfo, CartItem } from "../types";
 
+// Simple in-memory cache
+const cache = {
+  products: { data: null as Product[] | null, timestamp: 0 },
+  orders: { data: null as Order[] | null, timestamp: 0 },
+};
+
+const CACHE_DURATION = 60000; // 1 minute cache for orders
+const PRODUCT_CACHE_DURATION = 5 * 60000; // 5 minutes for products
+
 export const supabaseService = {
   // ----------------------------------------------------------------
   // PRODUCT MANAGEMENT
   // ----------------------------------------------------------------
 
-  async getProducts(): Promise<Product[]> {
+  async getProducts(forceRefresh = false): Promise<Product[]> {
+    const now = Date.now();
+    if (
+      !forceRefresh &&
+      cache.products.data &&
+      now - cache.products.timestamp < PRODUCT_CACHE_DURATION
+    ) {
+      return cache.products.data;
+    }
+
     const { data, error } = await supabase
       .from("products")
       .select("*")
       .order("name");
 
     if (error) throw new Error(error.message);
+
+    // Update Cache
+    cache.products = { data: data || [], timestamp: now };
     return data || [];
   },
 
@@ -25,6 +46,9 @@ export const supabaseService = {
       .single();
 
     if (error) throw new Error(error.message);
+
+    // Invalidate Cache
+    cache.products.data = null;
     return data;
   },
 
@@ -36,6 +60,9 @@ export const supabaseService = {
       .single();
 
     if (error) throw new Error(error.message);
+
+    // Invalidate Cache
+    cache.products.data = null;
     return data;
   },
 
@@ -43,6 +70,9 @@ export const supabaseService = {
     const { error } = await supabase.from("products").delete().eq("id", id);
 
     if (error) throw new Error(error.message);
+
+    // Invalidate Cache
+    cache.products.data = null;
   },
 
   // ----------------------------------------------------------------
@@ -134,6 +164,10 @@ export const supabaseService = {
     //   body: JSON.stringify({ order: orderData }),
     // }).catch(console.error);
 
+    // Invalidate Caches
+    cache.orders.data = null;
+    cache.products.data = null;
+
     return orderData as Order;
   },
 
@@ -148,15 +182,63 @@ export const supabaseService = {
     });
 
     if (error) throw new Error(error.message);
+
+    // Invalidate Caches
+    cache.orders.data = null;
+    cache.products.data = null;
+
     return data as Order;
   },
 
-  async getOrders(startDate?: string, endDate?: string): Promise<Order[]> {
+  async getOrders(
+    startDate?: string,
+    endDate?: string,
+    forceRefresh = false
+  ): Promise<Order[]> {
+    const now = Date.now();
+    let allOrders = cache.orders.data;
+
+    // Fetch all if cache is cold or empty
+    if (
+      forceRefresh ||
+      !allOrders ||
+      now - cache.orders.timestamp > CACHE_DURATION
+    ) {
+      // Fetch ALL orders to populate cache
+      allOrders = await this.fetchOrdersFromDb();
+      cache.orders = { data: allOrders, timestamp: now };
+    }
+
+    // Apply Filter in Memory
+    if (startDate || endDate) {
+      return (allOrders || []).filter((order) => {
+        const orderDate = new Date(order.created_at);
+        if (startDate) {
+          const start = new Date(startDate);
+          if (orderDate < start) return false;
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (orderDate > end) return false;
+        }
+        return true;
+      });
+    }
+
+    return allOrders || [];
+  },
+
+  async fetchOrdersFromDb(
+    startDate?: string,
+    endDate?: string
+  ): Promise<Order[]> {
     let query = supabase
       .from("orders")
       .select("*")
       .order("created_at", { ascending: false });
 
+    // Optional: Keep DB filtering if we ever want to do a direct fetch outside cache mechanism
     if (startDate) query = query.gte("created_at", startDate);
     if (endDate) {
       const end = new Date(endDate);
@@ -192,28 +274,21 @@ export const supabaseService = {
   },
 
   async getLowStockProducts(threshold: number = 10): Promise<Product[]> {
-    const { data, error } = await supabase
-      .from("products")
-      .select("*")
-      .lt("stock", threshold)
-      .order("stock", { ascending: true });
-
-    if (error) throw new Error(error.message);
-    return data || [];
+    const products = await this.getProducts();
+    return products
+      .filter((p) => p.stock < threshold)
+      .sort((a, b) => a.stock - b.stock);
   },
 
   async getTopSellingProducts(
     limit: number = 5
   ): Promise<{ product: Product; count: number }[]> {
-    const { data: orders, error } = await supabase
-      .from("orders")
-      .select("items");
-    if (error) throw new Error(error.message);
+    const orders = await this.getOrders(); // Use Cached Orders
 
     const productSales: Record<string, { product: Product; count: number }> =
       {};
 
-    orders?.forEach((order) => {
+    orders.forEach((order) => {
       const items = order.items as CartItem[];
       items.forEach((item) => {
         if (!productSales[item.id]) {
@@ -229,19 +304,18 @@ export const supabaseService = {
   },
 
   async getSlowMovingProducts(days: number = 30): Promise<Product[]> {
-    const { data: products } = await supabase.from("products").select("*");
-    if (!products) return [];
+    const products = await this.getProducts(); // Use Cached Products
+    const orders = await this.getOrders(); // Use Cached Orders
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const { data: orders } = await supabase
-      .from("orders")
-      .select("items")
-      .gte("created_at", cutoffDate.toISOString());
+    const recentOrders = orders.filter(
+      (o) => new Date(o.created_at) >= cutoffDate
+    );
 
     const soldProductIds = new Set<string>();
-    orders?.forEach((order) => {
+    recentOrders.forEach((order) => {
       const items = order.items as CartItem[];
       items.forEach((item) => soldProductIds.add(item.id));
     });
@@ -250,9 +324,7 @@ export const supabaseService = {
   },
 
   async getReturningCustomerRate(): Promise<number> {
-    const { data: orders } = await supabase
-      .from("orders")
-      .select("customer_info");
+    const orders = await this.getOrders(); // Use Cached Orders
     if (!orders || orders.length === 0) return 0;
 
     const customers = orders.map(

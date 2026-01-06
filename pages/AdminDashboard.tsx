@@ -616,7 +616,7 @@ const AdminDashboard: React.FC = () => {
                         .toLowerCase()
                         .includes(searchQuery.toLowerCase())
                   )
-                  .slice(0, 10)
+                  .slice(0, 6)
                   .map((order) => (
                     <tr
                       key={order.id}
