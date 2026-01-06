@@ -92,6 +92,10 @@ serve(async (req) => {
     const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     const telegramChatId = Deno.env.get("TELEGRAM_CHAT_ID");
 
+    console.log(
+      `Telegram Debug: Token Exists? ${!!telegramBotToken}, ChatID Exists? ${!!telegramChatId}`
+    );
+
     if (telegramBotToken && telegramChatId) {
       const itemsList = finalItems
         .map(
