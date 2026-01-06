@@ -196,37 +196,54 @@ export const supabaseService = {
     forceRefresh = false
   ): Promise<Order[]> {
     const now = Date.now();
-    let allOrders = cache.orders.data;
+    let cachedOrders = cache.orders.data;
 
-    // Fetch all if cache is cold or empty
+    // 1. If we have a comprehensive cache, try to use it
     if (
-      forceRefresh ||
-      !allOrders ||
-      now - cache.orders.timestamp > CACHE_DURATION
+      !forceRefresh &&
+      cachedOrders &&
+      now - cache.orders.timestamp < CACHE_DURATION
     ) {
-      // Fetch ALL orders to populate cache
-      allOrders = await this.fetchOrdersFromDb();
-      cache.orders = { data: allOrders, timestamp: now };
+      // Filter memory cache
+      if (startDate || endDate) {
+        return this.filterOrdersInMemory(cachedOrders, startDate, endDate);
+      }
+      return cachedOrders;
     }
 
-    // Apply Filter in Memory
+    // 2. If filtering is requested and cache is cold, FETCH ONLY WHAT WE NEED
     if (startDate || endDate) {
-      return (allOrders || []).filter((order) => {
-        const orderDate = new Date(order.created_at);
-        if (startDate) {
-          const start = new Date(startDate);
-          if (orderDate < start) return false;
-        }
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          if (orderDate > end) return false;
-        }
-        return true;
-      });
+      return this.fetchOrdersFromDb(startDate, endDate);
     }
 
-    return allOrders || [];
+    // 3. If no filters (requesting "all"), fetch with a safe limit to avoid timeout
+    // and cache the result.
+    const freshOrders = await this.fetchOrdersFromDb();
+
+    // Only cache if we fetched a "default" list (which is now capped)
+    cache.orders = { data: freshOrders, timestamp: now };
+
+    return freshOrders;
+  },
+
+  filterOrdersInMemory(
+    orders: Order[],
+    startDate?: string,
+    endDate?: string
+  ): Order[] {
+    return orders.filter((order) => {
+      const orderDate = new Date(order.created_at);
+      if (startDate) {
+        const start = new Date(startDate);
+        if (orderDate < start) return false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (orderDate > end) return false;
+      }
+      return true;
+    });
   },
 
   async fetchOrdersFromDb(
@@ -244,6 +261,12 @@ export const supabaseService = {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
       query = query.lte("created_at", end.toISOString());
+    }
+
+    // SAFETY LIMIT: If no date range is provided, limit to last 2000 orders
+    // to prevent "statement timeout" on large tables.
+    if (!startDate && !endDate) {
+      query = query.limit(2000);
     }
 
     const { data, error } = await query;
@@ -305,17 +328,18 @@ export const supabaseService = {
 
   async getSlowMovingProducts(days: number = 30): Promise<Product[]> {
     const products = await this.getProducts(); // Use Cached Products
-    const orders = await this.getOrders(); // Use Cached Orders
 
+    // FETCH DIRECTLY FROM DB for efficiency (avoid fetching all orders if cache is partial)
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const recentOrders = orders.filter(
-      (o) => new Date(o.created_at) >= cutoffDate
-    );
+    const { data: orders } = await supabase
+      .from("orders")
+      .select("items")
+      .gte("created_at", cutoffDate.toISOString());
 
     const soldProductIds = new Set<string>();
-    recentOrders.forEach((order) => {
+    orders?.forEach((order) => {
       const items = order.items as CartItem[];
       items.forEach((item) => soldProductIds.add(item.id));
     });
