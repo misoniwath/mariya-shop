@@ -82,10 +82,37 @@ serve(async (req) => {
 
     // 6. Decrement Stock
     for (const item of finalItems) {
-      await supabaseClient.rpc("decrement_stock", {
-        row_id: item.id,
-        quantity: item.quantity,
-      });
+      const { error: stockError } = await supabaseClient.rpc(
+        "decrement_stock",
+        {
+          row_id: item.id,
+          quantity: item.quantity,
+        }
+      );
+
+      if (stockError) {
+        console.error(
+          `Failed to update stock via RPC for item ${item.id}:`,
+          stockError
+        );
+        // Fallback: Direct update
+        const { data: currentProduct } = await supabaseClient
+          .from("products")
+          .select("stock")
+          .eq("id", item.id)
+          .single();
+
+        if (currentProduct) {
+          const newStock = currentProduct.stock - item.quantity;
+          await supabaseClient
+            .from("products")
+            .update({ stock: newStock })
+            .eq("id", item.id);
+          console.log(
+            `Fallback stock update for ${item.id}: ${currentProduct.stock} -> ${newStock}`
+          );
+        }
+      }
     }
 
     // 7. Send Telegram Notification

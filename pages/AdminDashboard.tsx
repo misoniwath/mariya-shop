@@ -32,11 +32,10 @@ import {
 } from "lucide-react";
 import { supabaseService } from "../services/supabaseService";
 import { geminiService } from "../services/geminiService";
-import { Order, Product } from "../types";
-
-const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+import { useNavigate } from "react-router-dom";
 
 const AdminDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [salesData, setSalesData] = useState<
     { date: string; amount: number }[]
@@ -571,7 +570,9 @@ const AdminDashboard: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full md:w-64 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500 transition"
             />
-            <button className="text-indigo-600 font-semibold text-sm hover:underline whitespace-nowrap">
+            <button
+              onClick={() => navigate("/admin/orders")}
+              className="text-indigo-600 font-semibold text-sm hover:underline whitespace-nowrap">
               View All History
             </button>
           </div>
@@ -613,9 +614,7 @@ const AdminDashboard: React.FC = () => {
                         .toLowerCase()
                         .includes(searchQuery.toLowerCase())
                   )
-                  .slice()
-                  .reverse()
-                  .slice(0, 8)
+                  .slice(0, 10)
                   .map((order) => (
                     <tr
                       key={order.id}

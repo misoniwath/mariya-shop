@@ -11,6 +11,7 @@ import {
 import CustomerStore from "./pages/CustomerStore";
 import AdminDashboard from "./pages/AdminDashboard";
 import InventoryManagement from "./pages/InventoryManagement";
+import OrderHistory from "./pages/OrderHistory";
 import AuthPage from "./pages/AuthPage";
 import { UserRole } from "./types";
 import { supabase } from "./lib/supabaseClient";
@@ -119,6 +120,16 @@ const App: React.FC = () => {
               element={
                 isAdminAuthenticated ? (
                   <AdminDashboard />
+                ) : (
+                  <Navigate to="/auth" />
+                )
+              }
+            />
+            <Route
+              path="/admin/orders"
+              element={
+                isAdminAuthenticated ? (
+                  <OrderHistory />
                 ) : (
                   <Navigate to="/auth" />
                 )
