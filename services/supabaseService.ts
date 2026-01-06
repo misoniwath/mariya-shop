@@ -4,11 +4,21 @@ import { Product, Order, CustomerInfo, CartItem } from "../types";
 // Simple in-memory cache
 const cache = {
   products: { data: null as Product[] | null, timestamp: 0 },
-  orders: { data: null as Order[] | null, timestamp: 0 },
+  ordersByKey: new Map<string, { data: Order[]; timestamp: number }>(),
+};
+
+const inFlight = {
+  ordersByKey: new Map<string, Promise<Order[]>>(),
 };
 
 const CACHE_DURATION = 60000; // 1 minute cache for orders
 const PRODUCT_CACHE_DURATION = 5 * 60000; // 5 minutes for products
+
+const MAX_ORDERS_PER_QUERY = 2000;
+
+function ordersCacheKey(startDate?: string, endDate?: string): string {
+  return `${startDate ?? ""}..${endDate ?? ""}`;
+}
 
 export const supabaseService = {
   // ----------------------------------------------------------------
@@ -165,7 +175,7 @@ export const supabaseService = {
     // }).catch(console.error);
 
     // Invalidate Caches
-    cache.orders.data = null;
+    cache.ordersByKey.clear();
     cache.products.data = null;
 
     return orderData as Order;
@@ -184,7 +194,7 @@ export const supabaseService = {
     if (error) throw new Error(error.message);
 
     // Invalidate Caches
-    cache.orders.data = null;
+    cache.ordersByKey.clear();
     cache.products.data = null;
 
     return data as Order;
@@ -196,34 +206,29 @@ export const supabaseService = {
     forceRefresh = false
   ): Promise<Order[]> {
     const now = Date.now();
-    let cachedOrders = cache.orders.data;
+    const key = ordersCacheKey(startDate, endDate);
 
-    // 1. If we have a comprehensive cache, try to use it
-    if (
-      !forceRefresh &&
-      cachedOrders &&
-      now - cache.orders.timestamp < CACHE_DURATION
-    ) {
-      // Filter memory cache
-      if (startDate || endDate) {
-        return this.filterOrdersInMemory(cachedOrders, startDate, endDate);
-      }
-      return cachedOrders;
+    const cached = cache.ordersByKey.get(key);
+    if (!forceRefresh && cached && now - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
     }
 
-    // 2. If filtering is requested and cache is cold, FETCH ONLY WHAT WE NEED
-    if (startDate || endDate) {
-      return this.fetchOrdersFromDb(startDate, endDate);
+    const pending = inFlight.ordersByKey.get(key);
+    if (!forceRefresh && pending) {
+      return pending;
     }
 
-    // 3. If no filters (requesting "all"), fetch with a safe limit to avoid timeout
-    // and cache the result.
-    const freshOrders = await this.fetchOrdersFromDb();
+    const request = this.fetchOrdersFromDb(startDate, endDate)
+      .then((fresh) => {
+        cache.ordersByKey.set(key, { data: fresh, timestamp: Date.now() });
+        return fresh;
+      })
+      .finally(() => {
+        inFlight.ordersByKey.delete(key);
+      });
 
-    // Only cache if we fetched a "default" list (which is now capped)
-    cache.orders = { data: freshOrders, timestamp: now };
-
-    return freshOrders;
+    inFlight.ordersByKey.set(key, request);
+    return request;
   },
 
   filterOrdersInMemory(
@@ -252,7 +257,9 @@ export const supabaseService = {
   ): Promise<Order[]> {
     let query = supabase
       .from("orders")
-      .select("*")
+      .select(
+        "id, created_at, customer_info, items, total, payment_method, status"
+      )
       .order("created_at", { ascending: false });
 
     // Optional: Keep DB filtering if we ever want to do a direct fetch outside cache mechanism
@@ -263,11 +270,9 @@ export const supabaseService = {
       query = query.lte("created_at", end.toISOString());
     }
 
-    // SAFETY LIMIT: If no date range is provided, limit to last 2000 orders
-    // to prevent "statement timeout" on large tables.
-    if (!startDate && !endDate) {
-      query = query.limit(2000);
-    }
+    // SAFETY LIMIT: Always cap rows to prevent statement timeouts on large tables.
+    // If you need full exports, implement a server-side export with pagination.
+    query = query.limit(MAX_ORDERS_PER_QUERY);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -304,9 +309,11 @@ export const supabaseService = {
   },
 
   async getTopSellingProducts(
-    limit: number = 5
+    limit: number = 5,
+    startDate?: string,
+    endDate?: string
   ): Promise<{ product: Product; count: number }[]> {
-    const orders = await this.getOrders(); // Use Cached Orders
+    const orders = await this.getOrders(startDate, endDate);
 
     const productSales: Record<string, { product: Product; count: number }> =
       {};
@@ -333,10 +340,13 @@ export const supabaseService = {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    const { data: orders } = await supabase
+    const { data: orders, error } = await supabase
       .from("orders")
       .select("items")
-      .gte("created_at", cutoffDate.toISOString());
+      .gte("created_at", cutoffDate.toISOString())
+      .limit(MAX_ORDERS_PER_QUERY);
+
+    if (error) throw new Error(error.message);
 
     const soldProductIds = new Set<string>();
     orders?.forEach((order) => {
@@ -349,6 +359,24 @@ export const supabaseService = {
 
   async getReturningCustomerRate(): Promise<number> {
     const orders = await this.getOrders(); // Use Cached Orders
+    if (!orders || orders.length === 0) return 0;
+
+    const customers = orders.map(
+      (o) => (o.customer_info as CustomerInfo).phone
+    );
+    const uniqueCustomers = new Set(customers).size;
+    const totalOrders = customers.length;
+
+    return uniqueCustomers === 0
+      ? 0
+      : ((totalOrders - uniqueCustomers) / totalOrders) * 100;
+  },
+
+  async getReturningCustomerRateForRange(
+    startDate?: string,
+    endDate?: string
+  ): Promise<number> {
+    const orders = await this.getOrders(startDate, endDate);
     if (!orders || orders.length === 0) return 0;
 
     const customers = orders.map(

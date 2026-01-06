@@ -33,6 +33,7 @@ import {
 import { supabaseService } from "../services/supabaseService";
 import { geminiService } from "../services/geminiService";
 import { useNavigate } from "react-router-dom";
+import type { Order, Product } from "../types";
 
 const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
@@ -110,8 +111,15 @@ const AdminDashboard: React.FC = () => {
         supabaseService.getOrders(dateRange.start, dateRange.end),
         supabaseService.getSalesData(dateRange.start, dateRange.end),
         supabaseService.getLowStockProducts(10),
-        supabaseService.getTopSellingProducts(5),
-        supabaseService.getReturningCustomerRate(),
+        supabaseService.getTopSellingProducts(
+          5,
+          dateRange.start,
+          dateRange.end
+        ),
+        supabaseService.getReturningCustomerRateForRange(
+          dateRange.start,
+          dateRange.end
+        ),
         supabaseService.getSlowMovingProducts(30),
         supabaseService.getSalesByCategory(dateRange.start, dateRange.end),
         supabaseService.getFinancialStats(dateRange.start, dateRange.end),
