@@ -34,6 +34,8 @@ import { supabaseService } from "../services/supabaseService";
 import { geminiService } from "../services/geminiService";
 import { useNavigate } from "react-router-dom";
 
+const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
+
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
