@@ -3,7 +3,7 @@ export interface Product {
   name: string;
   description: string;
   price: number;
-  cost_price: number; // Added for profit calculation
+  cost_price?: number; // Admin-only field; optional for customer-facing fetches
   stock: number;
   category: string;
   image_url: string;

@@ -50,7 +50,7 @@ const CustomerStore: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await supabaseService.getProducts();
+      const data = await supabaseService.getProductsPublic();
       setProducts(data);
     } catch (err: any) {
       setError(err.message || "Failed to load products");

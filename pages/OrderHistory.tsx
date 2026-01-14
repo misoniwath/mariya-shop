@@ -11,32 +11,47 @@ const OrderHistory: React.FC = () => {
     start: "",
     end: "",
   });
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
-    fetchOrders();
+    // Reset paging when filters change
+    setOffset(0);
+    fetchOrders(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilter]);
 
-  const fetchOrders = async () => {
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setOffset(0);
+      fetchOrders(0);
+    }, 250);
+
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  const fetchOrders = async (nextOffset: number) => {
     setLoading(true);
     try {
-      // If dates are provided, use them. Otherwise, fetch all (or recent large batch)
-      const data = await supabaseService.getOrders(
-        dateFilter.start || undefined,
-        dateFilter.end || undefined
-      );
-      setOrders(data);
+      const res = await supabaseService.getOrdersPage({
+        startDate: dateFilter.start || undefined,
+        endDate: dateFilter.end || undefined,
+        search: searchQuery || undefined,
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+      });
+
+      setOrders(res.data);
+      setOffset(nextOffset);
+      setHasMore(res.hasMore);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
-
-  const filteredOrders = orders.filter(
-    (o) =>
-      o.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.customer_info.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -75,6 +90,7 @@ const OrderHistory: React.FC = () => {
             <table className="w-full text-left">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                 <tr>
+                  <th className="px-6 py-4 font-semibold">#</th>
                   <th className="px-6 py-4 font-semibold">Order ID</th>
                   <th className="px-6 py-4 font-semibold">Customer</th>
                   <th className="px-6 py-4 font-semibold">Date</th>
@@ -84,19 +100,22 @@ const OrderHistory: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredOrders.length === 0 ? (
+                {orders.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-6 py-10 text-center text-slate-400 italic">
                       No matching orders found.
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((order) => (
+                  orders.map((order, i) => (
                     <tr
                       key={order.id}
                       className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-slate-500 font-semibold">
+                        {offset + i + 1}
+                      </td>
                       <td className="px-6 py-4 font-mono text-xs text-indigo-600 font-bold">
                         {order.id}
                       </td>
@@ -139,6 +158,16 @@ const OrderHistory: React.FC = () => {
           </div>
         )}
       </div>
+
+      {!loading && hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={() => fetchOrders(offset + PAGE_SIZE)}
+            className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-bold hover:bg-slate-50 transition">
+            Load more
+          </button>
+        </div>
+      )}
     </div>
   );
 };

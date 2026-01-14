@@ -1,16 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
-import {
-  Package,
-  Search,
-  Plus,
-  Trash2,
-  Edit2,
-  BrainCircuit,
-  X,
-  Save,
-} from "lucide-react";
+import { Package, Search, Plus, Trash2, Edit2, X, Save } from "lucide-react";
 import { supabaseService } from "../services/supabaseService";
-import { geminiService } from "../services/geminiService";
 import { Product } from "../types";
 
 const InventoryManagement: React.FC = () => {
@@ -23,7 +13,6 @@ const InventoryManagement: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(
     null
   );
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const CATEGORY_OPTIONS = [
     "night cream",
@@ -93,14 +82,6 @@ const InventoryManagement: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleGenerateAI = async () => {
-    if (!editingProduct?.name) return;
-    setIsGenerating(true);
-    const desc = await geminiService.generateDescription(editingProduct.name);
-    setEditingProduct({ ...editingProduct, description: desc });
-    setIsGenerating(false);
   };
 
   const openAddModal = () => {
@@ -426,14 +407,6 @@ const InventoryManagement: React.FC = () => {
                     <label className="block text-sm font-bold text-slate-700">
                       Description
                     </label>
-                    <button
-                      type="button"
-                      onClick={handleGenerateAI}
-                      disabled={isGenerating || !editingProduct.name}
-                      className="text-xs font-bold text-indigo-600 flex items-center gap-1 hover:underline disabled:opacity-50">
-                      <BrainCircuit size={14} />
-                      {isGenerating ? "Generating..." : "AI Generate"}
-                    </button>
                   </div>
                   <textarea
                     required

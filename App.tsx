@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import { HashRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import {
   ShoppingCart,
@@ -8,14 +8,15 @@ import {
   User,
   Store,
 } from "lucide-react";
-import CustomerStore from "./pages/CustomerStore";
-import AdminDashboard from "./pages/AdminDashboard";
-import InventoryManagement from "./pages/InventoryManagement";
-import OrderHistory from "./pages/OrderHistory";
-import AuthPage from "./pages/AuthPage";
 import { UserRole } from "./types";
 import { supabase } from "./lib/supabaseClient";
 import { Analytics } from "@vercel/analytics/react";
+
+const CustomerStore = lazy(() => import("./pages/CustomerStore"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const InventoryManagement = lazy(() => import("./pages/InventoryManagement"));
+const OrderHistory = lazy(() => import("./pages/OrderHistory"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
 
 const App: React.FC = () => {
   const [role, setRole] = useState<UserRole>(UserRole.CUSTOMER);
@@ -107,45 +108,54 @@ const App: React.FC = () => {
         </header>
 
         <main className="flex-grow">
-          <Routes>
-            <Route path="/" element={<CustomerStore />} />
-            <Route
-              path="/auth"
-              element={
-                <AuthPage onAuthSuccess={() => setIsAdminAuthenticated(true)} />
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                isAdminAuthenticated ? (
-                  <AdminDashboard />
-                ) : (
-                  <Navigate to="/auth" />
-                )
-              }
-            />
-            <Route
-              path="/admin/orders"
-              element={
-                isAdminAuthenticated ? (
-                  <OrderHistory />
-                ) : (
-                  <Navigate to="/auth" />
-                )
-              }
-            />
-            <Route
-              path="/inventory"
-              element={
-                isAdminAuthenticated ? (
-                  <InventoryManagement />
-                ) : (
-                  <Navigate to="/auth" />
-                )
-              }
-            />
-          </Routes>
+          <Suspense
+            fallback={
+              <div className="min-h-[50vh] flex items-center justify-center bg-slate-50">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+              </div>
+            }>
+            <Routes>
+              <Route path="/" element={<CustomerStore />} />
+              <Route
+                path="/auth"
+                element={
+                  <AuthPage
+                    onAuthSuccess={() => setIsAdminAuthenticated(true)}
+                  />
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  isAdminAuthenticated ? (
+                    <AdminDashboard />
+                  ) : (
+                    <Navigate to="/auth" />
+                  )
+                }
+              />
+              <Route
+                path="/admin/orders"
+                element={
+                  isAdminAuthenticated ? (
+                    <OrderHistory />
+                  ) : (
+                    <Navigate to="/auth" />
+                  )
+                }
+              />
+              <Route
+                path="/inventory"
+                element={
+                  isAdminAuthenticated ? (
+                    <InventoryManagement />
+                  ) : (
+                    <Navigate to="/auth" />
+                  )
+                }
+              />
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </HashRouter>

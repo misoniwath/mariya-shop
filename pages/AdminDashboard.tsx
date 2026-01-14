@@ -18,8 +18,6 @@ import {
   DollarSign,
   ShoppingBag,
   TrendingUp,
-  Users,
-  BrainCircuit,
   ShieldCheck,
   ShieldAlert,
   Send,
@@ -31,7 +29,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { supabaseService } from "../services/supabaseService";
-import { geminiService } from "../services/geminiService";
 import { useNavigate } from "react-router-dom";
 import type { Order, Product } from "../types";
 
@@ -47,7 +44,6 @@ const AdminDashboard: React.FC = () => {
   const [topProducts, setTopProducts] = useState<
     { product: Product; count: number }[]
   >([]);
-  const [returningRate, setReturningRate] = useState<number>(0);
   const [slowMovers, setSlowMovers] = useState<Product[]>([]);
   const [salesByCategory, setSalesByCategory] = useState<
     { name: string; value: number }[]
@@ -78,8 +74,6 @@ const AdminDashboard: React.FC = () => {
   };
 
   const [loading, setLoading] = useState(true);
-  const [aiAnalysis, setAiAnalysis] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [telegramStatus, setTelegramStatus] = useState<{
     configured: boolean;
@@ -98,40 +92,52 @@ const AdminDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [
-        ordersRes,
-        salesRes,
-        lowStockRes,
-        topRes,
-        returningRes,
-        slowRes,
-        categoryRes,
-        financialRes,
-      ] = await Promise.all([
-        supabaseService.getOrders(dateRange.start, dateRange.end),
-        supabaseService.getSalesData(dateRange.start, dateRange.end),
+      const [ordersPage, lowStockRes, slowRes] = await Promise.all([
+        supabaseService.getOrdersPage({
+          startDate: dateRange.start,
+          endDate: dateRange.end,
+          limit: 200,
+          offset: 0,
+        }),
         supabaseService.getLowStockProducts(10),
-        supabaseService.getTopSellingProducts(
-          5,
-          dateRange.start,
-          dateRange.end
-        ),
-        supabaseService.getReturningCustomerRateForRange(
-          dateRange.start,
-          dateRange.end
-        ),
         supabaseService.getSlowMovingProducts(30),
-        supabaseService.getSalesByCategory(dateRange.start, dateRange.end),
-        supabaseService.getFinancialStats(dateRange.start, dateRange.end),
       ]);
-      setOrders(ordersRes);
-      setSalesData(salesRes);
+
+      setOrders(ordersPage.data);
       setLowStockProducts(lowStockRes);
-      setTopProducts(topRes);
-      setReturningRate(returningRes);
       setSlowMovers(slowRes);
-      setSalesByCategory(categoryRes);
-      setFinancialStats(financialRes);
+
+      // Prefer server-side metrics (fast for large datasets)
+      try {
+        const metrics = await supabaseService.getDashboardMetrics(
+          dateRange.start,
+          dateRange.end,
+          5
+        );
+        setSalesData(metrics.salesData);
+        setSalesByCategory(metrics.salesByCategory);
+        setTopProducts(metrics.topProducts);
+        setFinancialStats(metrics.financialStats);
+      } catch {
+        // Fallback so the dashboard still works before SQL RPC is deployed.
+        const [salesRes, topRes, categoryRes, financialRes] = await Promise.all(
+          [
+            supabaseService.getSalesData(dateRange.start, dateRange.end),
+            supabaseService.getTopSellingProducts(
+              5,
+              dateRange.start,
+              dateRange.end
+            ),
+            supabaseService.getSalesByCategory(dateRange.start, dateRange.end),
+            supabaseService.getFinancialStats(dateRange.start, dateRange.end),
+          ]
+        );
+
+        setSalesData(salesRes);
+        setTopProducts(topRes);
+        setSalesByCategory(categoryRes);
+        setFinancialStats(financialRes);
+      }
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard data");
     } finally {
@@ -163,20 +169,6 @@ const AdminDashboard: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const getAiInsight = async () => {
-    setIsAnalyzing(true);
-    setError(null);
-    try {
-      const salesString = JSON.stringify(salesData);
-      const insight = await geminiService.analyzeSales(salesString);
-      setAiAnalysis(insight);
-    } catch (err: any) {
-      setError(err.message || "AI analysis failed");
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   const handleTestTelegram = async () => {
@@ -218,20 +210,6 @@ const AdminDashboard: React.FC = () => {
       subValue: <span className="text-xs text-slate-400">After costs</span>,
       icon: Wallet,
       color: "emerald",
-    },
-    {
-      label: "Profit Margin",
-      value: `${financialStats.margin.toFixed(1)}%`,
-      subValue: <span className="text-xs text-slate-400">Avg. margin</span>,
-      icon: TrendingUp,
-      color: "blue",
-    },
-    {
-      label: "Returning Rate",
-      value: `${returningRate.toFixed(1)}%`,
-      subValue: <span className="text-xs text-slate-400">Loyalty</span>,
-      icon: Users,
-      color: "violet",
     },
   ];
 
@@ -296,14 +274,6 @@ const AdminDashboard: React.FC = () => {
               <Download size={20} />
             </button>
           </div>
-
-          <button
-            onClick={getAiInsight}
-            disabled={isAnalyzing || salesData.length === 0}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-6 py-2.5 rounded-xl font-bold hover:shadow-lg transition disabled:opacity-50">
-            <BrainCircuit size={20} />
-            {isAnalyzing ? "Thinking..." : "AI Sales Insight"}
-          </button>
         </div>
       </div>
 
@@ -549,23 +519,7 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* AI Insight Box */}
-        <div className="bg-indigo-600 p-6 rounded-2xl text-white shadow-lg shadow-indigo-100">
-          <div className="flex items-center gap-2 font-bold mb-4">
-            <BrainCircuit size={20} />
-            Gemini Insights
-          </div>
-          <div className="text-indigo-50 text-sm leading-relaxed min-h-[100px]">
-            {aiAnalysis ? (
-              <div className="whitespace-pre-wrap">{aiAnalysis}</div>
-            ) : (
-              <p className="italic opacity-80">
-                Click the AI Insight button to analyze performance trends and
-                get optimization tips.
-              </p>
-            )}
-          </div>
-        </div>
+        {/* (AI Insights removed) */}
       </div>
 
       {/* Recent Orders Table */}
@@ -591,6 +545,7 @@ const AdminDashboard: React.FC = () => {
           <table className="w-full text-left">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
+                <th className="px-6 py-4 font-semibold">#</th>
                 <th className="px-6 py-4 font-semibold">Order ID</th>
                 <th className="px-6 py-4 font-semibold">Customer</th>
                 <th className="px-6 py-4 font-semibold">Date</th>
@@ -608,7 +563,7 @@ const AdminDashboard: React.FC = () => {
               ).length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-10 text-center text-slate-400 italic">
                     {orders.length === 0
                       ? "No orders recorded yet."
@@ -625,10 +580,13 @@ const AdminDashboard: React.FC = () => {
                         .includes(searchQuery.toLowerCase())
                   )
                   .slice(0, 6)
-                  .map((order) => (
+                  .map((order, i) => (
                     <tr
                       key={order.id}
                       className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-slate-500 font-semibold">
+                        {i + 1}
+                      </td>
                       <td className="px-6 py-4 font-mono text-xs text-indigo-600 font-bold">
                         {order.id}
                       </td>

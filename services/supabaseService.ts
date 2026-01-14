@@ -4,6 +4,7 @@ import { Product, Order, CustomerInfo, CartItem } from "../types";
 // Simple in-memory cache
 const cache = {
   products: { data: null as Product[] | null, timestamp: 0 },
+  productsPublic: { data: null as Product[] | null, timestamp: 0 },
   ordersByKey: new Map<string, { data: Order[]; timestamp: number }>(),
 };
 
@@ -16,6 +17,34 @@ const PRODUCT_CACHE_DURATION = 5 * 60000; // 5 minutes for products
 
 const MAX_ORDERS_PER_QUERY = 2000;
 
+type OrdersPageParams = {
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+};
+
+type OrdersPageResult = {
+  data: Order[];
+  total: number | null;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
+type DashboardMetrics = {
+  financialStats: {
+    revenue: number;
+    profit: number;
+    margin: number;
+    growth: number;
+  };
+  salesData: { date: string; amount: number }[];
+  salesByCategory: { name: string; value: number }[];
+  topProducts: { product: Product; count: number }[];
+};
+
 function ordersCacheKey(startDate?: string, endDate?: string): string {
   return `${startDate ?? ""}..${endDate ?? ""}`;
 }
@@ -24,6 +53,29 @@ export const supabaseService = {
   // ----------------------------------------------------------------
   // PRODUCT MANAGEMENT
   // ----------------------------------------------------------------
+
+  async getProductsPublic(forceRefresh = false): Promise<Product[]> {
+    const now = Date.now();
+    if (
+      !forceRefresh &&
+      cache.productsPublic.data &&
+      now - cache.productsPublic.timestamp < PRODUCT_CACHE_DURATION
+    ) {
+      return cache.productsPublic.data;
+    }
+
+    // Customer-facing product list: only fetch fields needed for the store UI.
+    // Avoid shipping cost_price (sensitive) and reduce payload size.
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, name, price, stock, category, description, image_url")
+      .order("name");
+
+    if (error) throw new Error(error.message);
+
+    cache.productsPublic = { data: data || [], timestamp: now };
+    return data || [];
+  },
 
   async getProducts(forceRefresh = false): Promise<Product[]> {
     const now = Date.now();
@@ -59,6 +111,7 @@ export const supabaseService = {
 
     // Invalidate Cache
     cache.products.data = null;
+    cache.productsPublic.data = null;
     return data;
   },
 
@@ -73,6 +126,7 @@ export const supabaseService = {
 
     // Invalidate Cache
     cache.products.data = null;
+    cache.productsPublic.data = null;
     return data;
   },
 
@@ -83,6 +137,7 @@ export const supabaseService = {
 
     // Invalidate Cache
     cache.products.data = null;
+    cache.productsPublic.data = null;
   },
 
   // ----------------------------------------------------------------
@@ -177,6 +232,7 @@ export const supabaseService = {
     // Invalidate Caches
     cache.ordersByKey.clear();
     cache.products.data = null;
+    cache.productsPublic.data = null;
 
     return orderData as Order;
   },
@@ -196,6 +252,7 @@ export const supabaseService = {
     // Invalidate Caches
     cache.ordersByKey.clear();
     cache.products.data = null;
+    cache.productsPublic.data = null;
 
     return data as Order;
   },
@@ -229,6 +286,84 @@ export const supabaseService = {
 
     inFlight.ordersByKey.set(key, request);
     return request;
+  },
+
+  async getOrdersPage(
+    params: OrdersPageParams = {}
+  ): Promise<OrdersPageResult> {
+    const { startDate, endDate, search, limit = 50, offset = 0 } = params;
+
+    let query = supabase
+      .from("orders")
+      .select(
+        "id, created_at, customer_info, items, total, payment_method, status",
+        { count: "exact" }
+      )
+      .order("created_at", { ascending: false });
+
+    if (startDate) query = query.gte("created_at", startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query = query.lte("created_at", end.toISOString());
+    }
+
+    const trimmed = (search || "").trim();
+    if (trimmed) {
+      // Search by order id OR customer name (stored in JSON).
+      // Note: PostgREST JSON path filter syntax works with `customer_info->>name`.
+      const escaped = trimmed.replace(/,/g, "\\,");
+      query = query.or(
+        `id.ilike.%${escaped}%,customer_info->>name.ilike.%${escaped}%`
+      );
+    }
+
+    const from = Math.max(0, offset);
+    const to = from + Math.max(1, limit) - 1;
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
+    if (error) throw new Error(error.message);
+
+    const rows = (data || []) as Order[];
+    const total = typeof count === "number" ? count : null;
+    const hasMore =
+      total === null ? rows.length === limit : from + rows.length < total;
+
+    return {
+      data: rows,
+      total,
+      limit,
+      offset: from,
+      hasMore,
+    };
+  },
+
+  async getDashboardMetrics(
+    startDate: string,
+    endDate: string,
+    topLimit: number = 5
+  ): Promise<DashboardMetrics> {
+    const { data, error } = await supabase.rpc("dashboard_metrics", {
+      start_date: startDate,
+      end_date: endDate,
+      top_limit: topLimit,
+    });
+
+    if (error) throw new Error(error.message);
+
+    const safe = (data || {}) as Partial<DashboardMetrics>;
+    return {
+      financialStats: safe.financialStats || {
+        revenue: 0,
+        profit: 0,
+        margin: 0,
+        growth: 0,
+      },
+      salesData: safe.salesData || [],
+      salesByCategory: safe.salesByCategory || [],
+      topProducts: safe.topProducts || [],
+    };
   },
 
   filterOrdersInMemory(
