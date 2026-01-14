@@ -18,9 +18,6 @@ import {
   DollarSign,
   ShoppingBag,
   TrendingUp,
-  ShieldCheck,
-  ShieldAlert,
-  Send,
   Calendar,
   Download,
   Printer,
@@ -75,14 +72,6 @@ const AdminDashboard: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [telegramStatus, setTelegramStatus] = useState<{
-    configured: boolean;
-    testing: boolean;
-  }>({
-    // We don't expose Telegram secrets to the browser; assume configured for local/server setups.
-    configured: true,
-    testing: false,
-  });
 
   useEffect(() => {
     fetchData();
@@ -169,19 +158,6 @@ const AdminDashboard: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const handleTestTelegram = async () => {
-    setTelegramStatus((prev) => ({ ...prev, testing: true }));
-    const success = await supabaseService.testTelegram();
-    if (success) {
-      alert("Test message sent! Check your Telegram chat.");
-    } else {
-      alert(
-        "Failed to send test message. Check your console and environment variables."
-      );
-    }
-    setTelegramStatus((prev) => ({ ...prev, testing: false }));
   };
 
   const stats = [
@@ -481,45 +457,6 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
         </div>
-      </div>
-
-      {/* Status & AI Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-        {/* System Status */}
-        <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-            System Connectivity
-          </h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                {telegramStatus.configured ? (
-                  <ShieldCheck className="text-green-500" size={18} />
-                ) : (
-                  <ShieldAlert className="text-amber-500" size={18} />
-                )}
-                Telegram Bot
-              </div>
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  telegramStatus.configured
-                    ? "bg-green-100 text-green-700"
-                    : "bg-amber-100 text-amber-700"
-                }`}>
-                {telegramStatus.configured ? "ACTIVE" : "MISSING KEYS"}
-              </span>
-            </div>
-            <button
-              onClick={handleTestTelegram}
-              disabled={!telegramStatus.configured || telegramStatus.testing}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-bold transition disabled:opacity-50">
-              <Send size={16} />
-              {telegramStatus.testing ? "Sending..." : "Test Notification"}
-            </button>
-          </div>
-        </div>
-
-        {/* (AI Insights removed) */}
       </div>
 
       {/* Recent Orders Table */}
